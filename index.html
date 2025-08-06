@@ -4618,7 +4618,15 @@ input:checked + .slider:before {
                 </div>
             </div>
 
-            <div id="api-settings-screen" class="screen"><div class="header"><span class="back-btn" onclick="showScreen('home-screen')">‹</span><span>API 设置</span><span style="width: 30px;"></span></div><div class="form-container"><p style="font-size: 14px; color: #666; background-color: #f0f0f0; padding: 10px; border-radius: 8px;">提示: 若要使用“发送图片”功能, 请务必选择支持Vision(视觉)的模型, 如<code style="background-color: #e0e0e0; padding: 2px 4px; border-radius: 4px;">gpt-4o</code>或<code style="background-color: #e0e0e0; padding: 2px 4px; border-radius: 4px;">gpt-4-vision-preview</code>。</p><div class="form-group"><label for="proxy-url">反代地址 (不需要添加/v1噢~)</label><input type="text" id="proxy-url" placeholder="例如: https://api.openai.com"></div><div class="form-group"><label for="api-key">密钥 (直连轮询用英文逗号隔开)</label><input type="password" id="api-key" placeholder="sk-..."></div><div class="form-group"><label for="model-select">模型</label><select id="model-select"></select></div><button class="form-button" id="fetch-models-btn">拉取模型</button>
+            <div id="api-settings-screen" class="screen"><div class="header"><span class="back-btn" onclick="showScreen('home-screen')">‹</span><span>API 设置</span><span style="width: 30px;"></span></div><div class="form-container"><p style="font-size: 14px; color: #666; background-color: #f0f0f0; padding: 10px; border-radius: 8px;">提示: 若要使用“发送图片”功能, 请务必选择支持Vision(视觉)的模型, 如<code style="background-color: #e0e0e0; padding: 2px 4px; border-radius: 4px;">gpt-4o</code>或<code style="background-color: #e0e0e0; padding: 2px 4px; border-radius: 4px;">gpt-4-vision-preview</code>。</p><div class="form-group"><label for="proxy-url">反代地址 (不需要添加/v1噢~)</label><input type="text" id="proxy-url" placeholder="例如: https://api.openai.com"></div><div class="form-group"><label for="api-key">密钥 (直连轮询用英文逗号隔开)</label><input type="password" id="api-key" placeholder="sk-..."></div><div class="form-group"><label for="model-select">模型</label><select id="model-select"></select></div><!-- ▼▼▼ 请将这段【全新的HTML代码】粘贴到 “模型” 下拉框的 form-group 之后 ▼▼▼ -->
+<div class="form-group">
+    <label>API 预设</label>
+    <div class="bubble-preset-manager"> <!-- 复用现有样式 -->
+        <select id="api-preset-select" class="form-group select"></select>
+        <button id="manage-api-presets-btn" class="action-btn">管理</button>
+    </div>
+</div>
+<!-- ▲▲▲ 新代码粘贴结束 ▲▲▲ --><button class="form-button" id="fetch-models-btn">拉取模型</button>
 
 <!-- ▼▼▼ 将这段代码粘贴到 API 设置页面的“保存设置”按钮上方 ▼▼▼ -->
 <hr style="margin:20px 0; opacity:.3">
@@ -6223,6 +6231,152 @@ const DEFAULT_APP_ICONS = {
             });
         }
 
+// ▼▼▼ 请将这【一整块全新的JS代码】粘贴到你的JS功能函数定义区 ▼▼▼
+
+/**
+ * 【全新】API预设 - 渲染并填充下拉选择框
+ */
+function renderApiPresetSelector() {
+    const selectEl = document.getElementById('api-preset-select');
+    if (!selectEl) return;
+
+    selectEl.innerHTML = '<option value="">-- 自定义配置 --</option>';
+
+    state.apiPresets.forEach(preset => {
+        const option = document.createElement('option');
+        option.value = preset.id;
+        option.textContent = preset.name;
+        selectEl.appendChild(option);
+    });
+
+    // 检查当前配置是否匹配任何一个预设
+    const { proxyUrl, apiKey } = state.apiConfig;
+    const matchingPreset = state.apiPresets.find(p => p.proxyUrl === proxyUrl && p.apiKey === apiKey);
+
+    if (matchingPreset) {
+        selectEl.value = matchingPreset.id;
+    } else {
+        selectEl.value = ""; // 如果不匹配任何预设，则选中“自定义配置”
+    }
+}
+
+/**
+ * 【全新】API预设 - 当用户在下拉框中选择一个预设时触发
+ */
+function handleApiPresetSelectChange() {
+    const selectEl = document.getElementById('api-preset-select');
+    const proxyUrlInput = document.getElementById('proxy-url');
+    const apiKeyInput = document.getElementById('api-key');
+    const selectedId = parseInt(selectEl.value);
+
+    if (selectedId) {
+        const selectedPreset = state.apiPresets.find(p => p.id === selectedId);
+        if (selectedPreset) {
+            proxyUrlInput.value = selectedPreset.proxyUrl;
+            apiKeyInput.value = selectedPreset.apiKey;
+        }
+    }
+    // 如果选择“自定义配置”，则不改变输入框内容，保留用户当前的输入
+}
+
+/**
+ * 【全新】API预设 - 打开预设管理的操作菜单
+ */
+async function openApiPresetManager() {
+    const selectEl = document.getElementById('api-preset-select');
+    const selectedId = parseInt(selectEl.value);
+    const selectedPreset = state.apiPresets.find(p => p.id === selectedId);
+
+    const modal = document.getElementById('preset-actions-modal');
+    const footer = modal.querySelector('.custom-modal-footer');
+
+    // 复用之前的操作菜单模态框，但修改按钮内容和逻辑
+    footer.innerHTML = `
+        <button id="preset-action-save-new">保存当前配置为新预设...</button>
+        <button id="preset-action-update-current" ${!selectedPreset ? 'disabled' : ''}>更新当前预设</button>
+        <button id="preset-action-delete-current" class="btn-danger" ${!selectedPreset ? 'disabled' : ''}>删除当前预设</button>
+        <button id="preset-action-cancel" style="margin-top: 8px; border-radius: 8px; background-color: #f0f0f0;">取消</button>
+    `;
+
+    // 重新为新生成的按钮绑定事件
+    document.getElementById('preset-action-save-new').addEventListener('click', saveCurrentApiConfigAsPreset);
+    if (selectedPreset) {
+        document.getElementById('preset-action-update-current').addEventListener('click', () => updateSelectedApiPreset(selectedId));
+        document.getElementById('preset-action-delete-current').addEventListener('click', () => deleteSelectedApiPreset(selectedId));
+    }
+    document.getElementById('preset-action-cancel').addEventListener('click', () => modal.classList.remove('visible'));
+
+    modal.classList.add('visible');
+}
+
+/**
+ * 【全新】API预设 - 将当前输入框的内容保存为一个新的预设
+ */
+async function saveCurrentApiConfigAsPreset() {
+    const proxyUrl = document.getElementById('proxy-url').value.trim();
+    const apiKey = document.getElementById('api-key').value.trim();
+
+    if (!proxyUrl || !apiKey) {
+        alert('代理地址和密钥都不能为空！');
+        return;
+    }
+
+    const name = await showCustomPrompt('保存API预设', '请为这个配置起个名字：');
+    if (name && name.trim()) {
+        const newPreset = { name: name.trim(), proxyUrl, apiKey };
+        const newId = await db.apiPresets.add(newPreset);
+        state.apiPresets.push({ id: newId, ...newPreset });
+
+        renderApiPresetSelector(); // 重新渲染下拉框
+        document.getElementById('api-preset-select').value = newId; // 自动选中新创建的
+        document.getElementById('preset-actions-modal').classList.remove('visible');
+        await showCustomAlert('成功', `API预设 "${name.trim()}" 已保存！`);
+    }
+}
+
+/**
+ * 【全新】API预设 - 更新当前选中的预设
+ */
+async function updateSelectedApiPreset(presetId) {
+    const proxyUrl = document.getElementById('proxy-url').value.trim();
+    const apiKey = document.getElementById('api-key').value.trim();
+
+    if (!proxyUrl || !apiKey) {
+        alert('代理地址和密钥都不能为空！');
+        return;
+    }
+
+    const preset = state.apiPresets.find(p => p.id === presetId);
+    if (preset) {
+        preset.proxyUrl = proxyUrl;
+        preset.apiKey = apiKey;
+        await db.apiPresets.put(preset);
+        document.getElementById('preset-actions-modal').classList.remove('visible');
+        await showCustomAlert('成功', `预设 "${preset.name}" 已更新！`);
+    }
+}
+
+/**
+ * 【全新】API预设 - 删除当前选中的预设
+ */
+async function deleteSelectedApiPreset(presetId) {
+    const preset = state.apiPresets.find(p => p.id === presetId);
+    if (preset) {
+        const confirmed = await showCustomConfirm('确认删除', `确定要删除API预设 "${preset.name}" 吗？`, { confirmButtonClass: 'btn-danger' });
+        if (confirmed) {
+            await db.apiPresets.delete(presetId);
+            state.apiPresets = state.apiPresets.filter(p => p.id !== presetId);
+
+            renderApiPresetSelector(); // 重新渲染下拉框
+            document.getElementById('preset-actions-modal').classList.remove('visible');
+            await showCustomAlert('成功', '预设已删除。');
+        }
+    }
+}
+
+// ▲▲▲ 新函数粘贴结束 ▲▲▲
+
+
 // ▼▼▼ 请用这个【功能增强版】替换旧的 showCustomPrompt 函数 ▼▼▼
 function showCustomPrompt(title, placeholder, initialValue = '', type = 'text', extraHtml = '') {
     return new Promise(resolve => {
@@ -6267,7 +6421,7 @@ function showCustomPrompt(title, placeholder, initialValue = '', type = 'text', 
         // 2. 数据库结构定义
         // ===================================================================
 
-db.version(25).stores({ // 👈 核心修正：版本号从 24 改为 25
+db.version(26).stores({ // 👈 核心修正：版本号从 25 改为 26
     chats: '&id, isGroup, groupId', 
     apiConfig: '&id', 
     globalSettings: '&id', 
@@ -6284,7 +6438,8 @@ db.version(25).stores({ // 👈 核心修正：版本号从 24 改为 25
     qzoneGroups: '++id, name',
     memories: '++id, chatId, timestamp, type, targetDate' ,
     callRecords: '++id, chatId, timestamp, customName',
-    bubbleStylePresets: '++id, name, css' // 👈 我们上次新增的“抽屉”在这里
+    bubbleStylePresets: '++id, name, css', // 👈 我们上次新增的“抽屉”在这里
+    apiPresets: '++id, name, proxyUrl, apiKey', // 👈 在它后面加上这一行新的
 });
         // ===================================================================
         // 3. 所有功能函数定义
@@ -6748,6 +6903,8 @@ function displayFilteredFavorites(items) {
 
 // ▼▼▼ 用这整块新代码，完整替换旧的 exportBackup 函数 ▼▼▼
 
+// ▼▼▼ 请用这【一整块】全新的代码，完整替换掉您文件中旧的 exportBackup 函数 ▼▼▼
+
 async function exportBackup() {
     try {
         const backupData = {
@@ -6755,11 +6912,13 @@ async function exportBackup() {
             timestamp: Date.now()
         };
 
+        // 【核心修正】确保这里的变量列表（16个）和下面的Promise列表（16个）完全对应
         const [
             chats, worldBooks, userStickers, apiConfig, globalSettings,
             personaPresets, musicLibrary, qzoneSettings, qzonePosts,
             qzoneAlbums, qzonePhotos, favorites, qzoneGroups,
-            memories, worldBookCategories, bubbleStylePresets
+            memories, worldBookCategories, bubbleStylePresets,
+            apiPresets
         ] = await Promise.all([
             db.chats.toArray(),
             db.worldBooks.toArray(),
@@ -6775,44 +6934,39 @@ async function exportBackup() {
             db.favorites.toArray(),
             db.qzoneGroups.toArray(),
             db.memories.toArray(),
-            db.worldBookCategories.toArray(),
-            db.bubbleStylePresets.toArray()
+            db.worldBookCategories.toArray(), // <-- 之前漏掉的就是这一行！
+            db.bubbleStylePresets.toArray(),
+            db.apiPresets.toArray()
         ]);
 
-        // --- 核心修改：在这里处理本地音乐文件 ---
         if (musicLibrary && musicLibrary.playlist) {
             const serializablePlaylist = await Promise.all(
                 musicLibrary.playlist.map(async track => {
-                    // 检查这首歌是不是本地文件，并且它的src是File/Blob对象
                     if (track.isLocal && track.src instanceof Blob) {
-                        // 将文件转成Base64字符串
                         const base64Src = await new Promise(resolve => {
                             const reader = new FileReader();
                             reader.onload = e => resolve(e.target.result);
                             reader.readAsDataURL(track.src);
                         });
-                        // 返回一个包含Base64数据的新对象
                         return { 
                             ...track, 
-                            src: base64Src, // 把文件对象替换为Base64字符串
-                            originalName: track.src.name, // 保存原始文件名
-                            originalType: track.src.type  // 保存原始文件类型
+                            src: base64Src,
+                            originalName: track.src.name,
+                            originalType: track.src.type
                         };
                     }
-                    // 如果不是本地文件，直接返回原样
                     return track;
                 })
             );
-            // 用处理好的、可序列化的播放列表替换旧的
             musicLibrary.playlist = serializablePlaylist;
         }
-        // --- 修改结束 ---
 
         Object.assign(backupData, {
             chats, worldBooks, userStickers, apiConfig, globalSettings,
             personaPresets, musicLibrary, qzoneSettings, qzonePosts,
             qzoneAlbums, qzonePhotos, favorites, qzoneGroups,
-            memories, worldBookCategories, bubbleStylePresets
+            memories, worldBookCategories, bubbleStylePresets,
+            apiPresets
         });
 
         const blob = new Blob(
@@ -6886,6 +7040,7 @@ async function exportBackup() {
                 if (Array.isArray(data.qzoneGroups)) await db.qzoneGroups.bulkPut(data.qzoneGroups);
                 if (Array.isArray(data.memories)) await db.memories.bulkPut(data.memories);
                 if (Array.isArray(data.bubbleStylePresets)) await db.bubbleStylePresets.bulkPut(data.bubbleStylePresets);
+                if (Array.isArray(data.apiPresets)) await db.apiPresets.bulkPut(data.apiPresets); // <-- 在这里加上这一行
 
                 if (data.apiConfig) await db.apiConfig.put(data.apiConfig);
                 if (data.globalSettings) await db.globalSettings.put(data.globalSettings);
@@ -6946,7 +7101,7 @@ async function exportBackup() {
         }
 
 async function loadAllDataFromDB() {
-    // ▼▼▼ 【核心修改在这里】 ▼▼▼
+// ▼▼▼ 用这【一整块】修正后的代码，替换掉你旧的 const [...] = await Promise.all(...) ▼▼▼
     const [
         chatsArr,
         apiConfig,
@@ -6958,7 +7113,8 @@ async function loadAllDataFromDB() {
         qzoneSettings,
         initialFavorites,
         worldBookCategories,
-        bubbleStylePresets // 👈 把我们新的“柜子”也加到这里来
+        bubbleStylePresets,
+        apiPresets
     ] = await Promise.all([
         db.chats.toArray(),
         db.apiConfig.get('main'),
@@ -6969,10 +7125,11 @@ async function loadAllDataFromDB() {
         db.personaPresets.toArray(),
         db.qzoneSettings.get('main'),
         db.favorites.orderBy('timestamp').reverse().toArray(),
-        db.worldBookCategories.toArray(),
-        db.bubbleStylePresets.toArray() // 👈 告诉程序也要把这个柜子里的东西拿出来
+        db.worldBookCategories.toArray(), // <-- 就是补上这一行！
+        db.bubbleStylePresets.toArray(),
+        db.apiPresets.toArray()
     ]);
-    // ▲▲▲ 【修改结束】 ▲▲▲
+// ▲▲▲ 替换结束 ▲▲▲
 
     state.chats = chatsArr.reduce((acc, chat) => {
 
@@ -7046,6 +7203,7 @@ async function loadAllDataFromDB() {
     // ▲▲▲ 【修改结束】 ▲▲▲
 
     state.bubbleStylePresets = bubbleStylePresets || []; // 👈 把读取到的数据存起来
+   state.apiPresets = apiPresets || []; // 👈 在它后面加上这一行新的
 }
         async function saveGlobalPlaylist() { await db.musicLibrary.put({ id: 'main', playlist: musicState.playlist }); }
 
@@ -7114,6 +7272,7 @@ function parseAiResponse(content) {
     document.getElementById('background-activity-switch').checked = state.globalSettings.enableBackgroundActivity || false;
     document.getElementById('background-interval-input').value = state.globalSettings.backgroundActivityInterval || 60;
     document.getElementById('block-cooldown-input').value = state.globalSettings.blockCooldownHours || 1;
+   renderApiPresetSelector(); // 👈 在这里添加这一行
 }
         window.renderApiSettingsProxy = renderApiSettings;
 
@@ -9577,7 +9736,60 @@ function playSong(index, shouldAutoPlay = true) { // 核心修改1：增加了�
 
         function changePlayMode() { const modes = ['order', 'random', 'single']; const currentModeIndex = modes.indexOf(musicState.playMode); musicState.playMode = modes[(currentModeIndex + 1) % modes.length]; document.getElementById('music-mode-btn').textContent = {'order': '顺序', 'random': '随机', 'single': '单曲'}[musicState.playMode]; }
 
-        async function addSongFromURL() { const url = await showCustomPrompt("添加网络歌曲", "请输入歌曲的URL", "", "url"); if (!url) return; const name = await showCustomPrompt("歌曲信息", "请输入歌名"); if (!name) return; const artist = await showCustomPrompt("歌曲信息", "请输入歌手名"); if (!artist) return; musicState.playlist.push({ name, artist, src: url, isLocal: false }); await saveGlobalPlaylist(); updatePlaylistUI(); if(musicState.currentIndex === -1) { musicState.currentIndex = musicState.playlist.length - 1; updatePlayerUI(); } }
+               // ▼▼▼ 请用这【一整块新代码】替换旧的 addSongFromURL 函数 ▼▼▼
+        async function addSongFromURL() {
+            const url = await showCustomPrompt("添加网络歌曲", "请输入歌曲的URL", "", "url");
+            if (!url) return;
+
+            const name = await showCustomPrompt("歌曲信息", "请输入歌名");
+            if (!name) return;
+
+            const artist = await showCustomPrompt("歌曲信息", "请输入歌手名");
+            if (!artist) return;
+
+            // 【核心修改1】在这里，我们先问用户要不要添加歌词
+            const wantLrc = await showCustomConfirm("导入歌词", `要为《${name}》导入歌词文件 (.lrc) 的URL吗？`);
+            
+            let lrcContent = ""; // 先准备一个空盒子放歌词
+
+            // 【核心修改2】如果用户说“要”
+            if (wantLrc) {
+                const lrcUrl = await showCustomPrompt("导入歌词", "请输入歌词文件的URL", "", "url");
+                // 如果用户真的输入了URL
+                if (lrcUrl) {
+                    try {
+                        // 我们就去把歌词文件的内容下载下来
+                        const response = await fetch(lrcUrl);
+                        if (response.ok) {
+                            lrcContent = await response.text(); // 把下载下来的内容存到盒子里
+                            alert('歌词获取成功！');
+                        } else {
+                            alert('歌词URL无效，获取失败了哦。');
+                        }
+                    } catch (e) {
+                        alert('获取歌词时发生网络错误。');
+                    }
+                }
+            }
+
+            // 【核心修改3】最后，把歌曲信息和歌词一起保存起来！
+            musicState.playlist.push({ 
+                name, 
+                artist, 
+                src: url, 
+                isLocal: false,
+                lrcContent: lrcContent // <-- 看，我们把歌词放在这里啦！
+            }); 
+            
+            await saveGlobalPlaylist(); 
+            updatePlaylistUI(); 
+            if(musicState.currentIndex === -1) { 
+                musicState.currentIndex = musicState.playlist.length - 1; 
+                updatePlayerUI(); 
+            }
+        }
+        // ▲▲▲ 替换结束 ▲▲▲
+
 
 async function addSongFromLocal(event) {
     const files = event.target.files;
@@ -15116,6 +15328,14 @@ document.getElementById('member-settings-modal').addEventListener('click', (e) =
         openFrameSelectorModal('member');
     }
 });
+
+
+
+// ▼▼▼ 在 init() 的事件监听器区域末尾，粘贴这段新代码 ▼▼▼
+document.getElementById('api-preset-select').addEventListener('change', handleApiPresetSelectChange);
+document.getElementById('manage-api-presets-btn').addEventListener('click', openApiPresetManager);
+// ▲▲▲ 新代码粘贴结束 ▲▲▲
+
     
 // ▼▼▼ 用这整块代码，替换掉旧的“头像框选择模态框的按钮事件” ▼▼▼
 
